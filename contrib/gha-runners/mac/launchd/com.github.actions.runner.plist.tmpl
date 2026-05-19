@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.github.actions.runner.__RUNNER_NAME__</string>
+    <key>UserName</key>
+    <string>ec2-user</string>
+    <key>WorkingDirectory</key>
+    <string>/Users/ec2-user/actions-runner</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ec2-user/actions-runner/run.sh</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/ec2-user</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/ec2-user/actions-runner/runner.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ec2-user/actions-runner/runner.err.log</string>
+</dict>
+</plist>
