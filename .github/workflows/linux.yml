@@ -1,0 +1,656 @@
+# Linux CI scaffold mirroring .cirrus.yml Linux task matrix.
+# Test invocation bodies are stubbed (TODO) - to be filled in when the qcow.2
+# runner image is ready. Runner labels use the pattern
+#   linux-<distro>-<arch>
+# which the runner image owner will register.
+
+name: Linux
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/linux.yml'
+      - 'cmd/**'
+      - 'pkg/**'
+      - 'libpod/**'
+      - 'test/**'
+      - 'contrib/cirrus/**'
+      - 'Makefile'
+      - 'go.mod'
+      - 'go.sum'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ==========================================================================
+  # Build family
+  # ==========================================================================
+
+  build:
+    name: build (${{ matrix.distro }})
+    runs-on: linux-${{ matrix.distro }}-amd64
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [fedora-43, fedora-42, rawhide, debian-14]
+    env:
+      DISTRO_NV: ${{ matrix.distro }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        # TODO: invoke contrib/cirrus/runner.sh equivalent
+        run: echo "TODO build $DISTRO_NV"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: build-${{ matrix.distro }}-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  build-aarch64:
+    name: build (fedora-43-aarch64)
+    runs-on: linux-fedora-43-aarch64
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO build aarch64"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: build-aarch64-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  alt-build:
+    name: ${{ matrix.alt-name }}
+    runs-on: linux-fedora-43-amd64
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows Cross omitted - already migrated to .github/workflows/windows.yml
+        alt-name:
+          - Build Each Commit
+          - Alt Arch. x86 Cross
+          - Alt Arch. ARM Cross
+          - Alt Arch. MIPS Cross
+          - Alt Arch. MIPS64 Cross
+          - Alt Arch. RISCV64 Cross
+          - Alt Arch. Other Cross
+    env:
+      ALT_NAME: ${{ matrix.alt-name }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO alt-build $ALT_NAME"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: alt-build-${{ strategy.job-index }}-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  # ==========================================================================
+  # Unit / API / fast tests
+  # ==========================================================================
+
+  unit-test:
+    name: unit (${{ matrix.priv }})
+    runs-on: linux-fedora-43-amd64
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        priv: [root, rootless]
+    env:
+      PRIV_NAME: ${{ matrix.priv }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO unit-test $PRIV_NAME"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: unit-${{ matrix.priv }}-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  apiv2-test:
+    name: apiv2 (${{ matrix.priv }})
+    runs-on: linux-fedora-43-amd64
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        priv: [root, rootless]
+    env:
+      PRIV_NAME: ${{ matrix.priv }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO apiv2-test $PRIV_NAME"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: apiv2-${{ matrix.priv }}-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  swagger:
+    name: swagger
+    runs-on: linux-fedora-43-amd64
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO swagger"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: swagger-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  bindings:
+    name: bindings
+    runs-on: linux-fedora-43-amd64
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO bindings"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: bindings-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  docker-py-test:
+    name: docker-py compat
+    runs-on: linux-fedora-43-amd64
+    timeout-minutes: 20
+    env:
+      TEST_ENVIRON: container
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO docker-py-test"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: docker-py-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  # ==========================================================================
+  # Integration tests (Ginkgo)
+  # ==========================================================================
+
+  local-integration-test:
+    name: int podman ${{ matrix.distro }} root
+    runs-on: linux-${{ matrix.distro }}-amd64
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [fedora-43, fedora-42, rawhide, debian-14]
+    env:
+      DISTRO_NV: ${{ matrix.distro }}
+      TEST_FLAVOR: int
+      PODBIN_NAME: podman
+      PRIV_NAME: root
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO local-integration $DISTRO_NV"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: local-int-${{ matrix.distro }}-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  remote-integration-test:
+    name: int remote ${{ matrix.distro }} root
+    runs-on: linux-${{ matrix.distro }}-amd64
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [fedora-43, fedora-42, rawhide, debian-14]
+    env:
+      DISTRO_NV: ${{ matrix.distro }}
+      TEST_FLAVOR: int
+      PODBIN_NAME: remote
+      PRIV_NAME: root
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO remote-integration $DISTRO_NV"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: remote-int-${{ matrix.distro }}-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  container-integration-test:
+    name: int podman fedora-43 root container
+    runs-on: linux-fedora-43-amd64
+    timeout-minutes: 20
+    env:
+      DISTRO_NV: fedora-43
+      TEST_FLAVOR: int
+      TEST_ENVIRON: container
+      PODBIN_NAME: podman
+      PRIV_NAME: root
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO container-integration"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: container-int-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  rootless-integration-test:
+    name: int podman ${{ matrix.distro }} rootless
+    runs-on: linux-${{ matrix.distro }}-amd64
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [fedora-43, fedora-42, rawhide, debian-14]
+    env:
+      DISTRO_NV: ${{ matrix.distro }}
+      TEST_FLAVOR: int
+      PODBIN_NAME: podman
+      PRIV_NAME: rootless
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO rootless-integration $DISTRO_NV"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: rootless-int-${{ matrix.distro }}-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  # ==========================================================================
+  # System tests (BATS)
+  # ==========================================================================
+
+  local-system-test:
+    name: sys podman ${{ matrix.distro }} root (${{ matrix.arch }})
+    runs-on: linux-${{ matrix.distro }}-${{ matrix.arch }}
+    timeout-minutes: ${{ matrix.arch == 'aarch64' && 35 || 25 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [fedora-43, fedora-42, rawhide, debian-14]
+        arch: [amd64]
+        include:
+          - distro: fedora-43
+            arch: aarch64
+    env:
+      DISTRO_NV: ${{ matrix.distro }}
+      ARCH: ${{ matrix.arch }}
+      TEST_FLAVOR: sys
+      PODBIN_NAME: podman
+      PRIV_NAME: root
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO local-system $DISTRO_NV $ARCH"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: local-sys-${{ matrix.distro }}-${{ matrix.arch }}-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  remote-system-test:
+    name: sys remote ${{ matrix.distro }} root (${{ matrix.arch }})
+    runs-on: linux-${{ matrix.distro }}-${{ matrix.arch }}
+    timeout-minutes: ${{ matrix.arch == 'aarch64' && 35 || 20 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [fedora-43, fedora-42, rawhide, debian-14]
+        arch: [amd64]
+        include:
+          - distro: fedora-43
+            arch: aarch64
+    env:
+      DISTRO_NV: ${{ matrix.distro }}
+      ARCH: ${{ matrix.arch }}
+      TEST_FLAVOR: sys
+      PODBIN_NAME: remote
+      PRIV_NAME: root
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO remote-system $DISTRO_NV $ARCH"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: remote-sys-${{ matrix.distro }}-${{ matrix.arch }}-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  rootless-system-test:
+    name: sys podman ${{ matrix.distro }} rootless
+    runs-on: linux-${{ matrix.distro }}-amd64
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [fedora-43, fedora-42, rawhide, debian-14]
+    env:
+      DISTRO_NV: ${{ matrix.distro }}
+      TEST_FLAVOR: sys
+      PODBIN_NAME: podman
+      PRIV_NAME: rootless
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO rootless-system $DISTRO_NV"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: rootless-sys-${{ matrix.distro }}-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  rootless-remote-system-test:
+    name: sys remote fedora-43 rootless
+    runs-on: linux-fedora-43-amd64
+    timeout-minutes: 25
+    env:
+      DISTRO_NV: fedora-43
+      TEST_FLAVOR: sys
+      PODBIN_NAME: remote
+      PRIV_NAME: rootless
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO rootless-remote-system"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: rootless-remote-sys-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  # ==========================================================================
+  # Specialized
+  # ==========================================================================
+
+  compose-test:
+    name: compose_v2 (${{ matrix.priv }})
+    runs-on: linux-fedora-43-amd64
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        priv: [root, rootless]
+    env:
+      TEST_FLAVOR: compose_v2
+      PRIV_NAME: ${{ matrix.priv }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO compose-test $PRIV_NAME"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: compose-${{ matrix.priv }}-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  buildah-bud-test:
+    name: bud ${{ matrix.podbin }} ${{ matrix.distro }}
+    runs-on: linux-${{ matrix.distro }}-amd64
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [fedora-43, fedora-42, rawhide, debian-14]
+        podbin: [podman, remote]
+    env:
+      DISTRO_NV: ${{ matrix.distro }}
+      TEST_FLAVOR: bud
+      PODBIN_NAME: ${{ matrix.podbin }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO buildah-bud $DISTRO_NV $PODBIN_NAME"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: bud-${{ matrix.distro }}-${{ matrix.podbin }}-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  farm-test:
+    name: farm fedora-43 rootless
+    runs-on: linux-fedora-43-amd64
+    timeout-minutes: 20
+    env:
+      TEST_FLAVOR: farm
+      PRIV_NAME: rootless
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO farm-test"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: farm-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  upgrade-test:
+    name: upgrade from ${{ matrix.from }}
+    runs-on: linux-fedora-43-amd64
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        from: [v5.3.1, v5.6.2]
+    env:
+      PODMAN_UPGRADE_FROM: ${{ matrix.from }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run task
+        run: echo "TODO upgrade-test from $PODMAN_UPGRADE_FROM"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: upgrade-${{ matrix.from }}-diag
+          path: |
+            *.log
+            *.html
+          if-no-files-found: warn
+
+  # ==========================================================================
+  # Meta (likely retire post-migration)
+  # ==========================================================================
+
+  meta:
+    name: VM img. keepalive
+    runs-on: linux-fedora-43-amd64
+    timeout-minutes: 20
+    steps:
+      - name: Run task
+        run: echo "TODO meta (entrypoint.sh equivalent; likely retire post-migration)"
