@@ -1,19 +1,59 @@
-name: CI
+name: "ci"
 
 on:
   push:
     branches:
       - main
+      - 'v*'
   pull_request:
+    branches:
+      - main
+      - 'v*'
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  path-filter:
+    runs-on: ubuntu-latest
+    outputs:
+      all: ${{ steps.filter.outputs.all }}
+      apiv2: ${{ steps.filter.outputs.apiv2 }}
+      bindings: ${{ steps.filter.outputs.bindings }}
+      docker_py: ${{ steps.filter.outputs.docker_py }}
+      unit: ${{ steps.filter.outputs.unit }}
+      compose_v2: ${{ steps.filter.outputs.compose_v2 }}
+      int: ${{ steps.filter.outputs.int }}
+      sys: ${{ steps.filter.outputs.sys }}
+      machine: ${{ steps.filter.outputs.machine }}
+      upgrade: ${{ steps.filter.outputs.upgrade }}
+
+      code: ${{ steps.filter-code.outputs.code }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        with:
+          filters: .github/filters.yaml
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter-code
+        with:
+          # Needed so all rules match
+          predicate-quantifier: 'every'
+          filters: |
+            code:
+              # First check for all source code files, but then because test files are also .go exclude them again.
+              - '**/*.@(go|c|h)'
+              - '!test/**'
+              - '!pkg/machine/e2e/**'
+              - '!pkg/bindings/test/**'
+
+
   validate-source:
     name: Validate source code changes
     runs-on: cncf-ubuntu-8-32-x86
@@ -130,3 +170,144 @@ jobs:
           git checkout --quiet "$savedhead"
           git rebase "$pr_base" -x "./make-and-check-size.sh $context_dir"
           rm -rf "$context_dir" ./make-and-check-size.sh
+
+  build-alt:
+    name: Cross Build (Linux, FreeBSD)
+    runs-on: cncf-ubuntu-16-64-x86
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Run cross build
+        run: make cross
+
+  build:
+    name: build ${{ matrix.distro }}
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [fedora-current, fedora-prior, fedora-rawhide, debian-sid]
+    uses: ./.github/workflows/lima.yml
+    with:
+      runner: cncf-ubuntu-8-32-x86
+      test: build
+      distro: ${{ matrix.distro }}
+      timeout: 20
+
+  big-tests:
+    needs: [path-filter, build, build-alt, validate-source]
+    name: ${{ matrix.test }} ${{ matrix.mode }} ${{ matrix.priv }} ${{ matrix.distro }}
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [fedora-current, fedora-prior, fedora-rawhide, debian-sid]
+        test: [sys, int]
+        priv: [rootless, root]
+        mode: [local, remote]
+        exclude:
+          # try to keep the task somewhat sane and not run remote test rootless
+          - priv: rootless
+            mode: remote
+        include:
+          # Add machine test
+          - test: machine
+            distro: fedora-current
+            priv: rootless
+            mode: local
+            timeout: 45
+          # Add buildah bud tests, only runs as root for now.
+          - test: bud
+            distro: fedora-current
+            priv: root
+            mode: local
+          - test: bud
+            distro: fedora-current
+            priv: root
+            mode: remote
+    uses: ./.github/workflows/lima.yml
+    with:
+      runner: cncf-ubuntu-8-32-x86
+      test: ${{ matrix.test }}
+      distro: ${{ matrix.distro }}
+      mode: ${{ matrix.mode }}
+      priv: ${{ matrix.priv }}
+      timeout: ${{ matrix.timeout || 30 }}
+      if: >-
+        github.event_name != 'pull_request' ||
+        needs.path-filter.outputs.all == 'true' ||
+        needs.path-filter.outputs.code == 'true' ||
+        needs.path-filter.outputs.${{ matrix.test }} == 'true'
+
+  small-tests:
+    needs: [path-filter, build, build-alt, validate-source]
+    name: ${{ matrix.test }} ${{ matrix.mode }} ${{ matrix.priv }} ${{ matrix.distro }}
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [fedora-current]
+        test: [apiv2, bindings, compose_v2, docker_py, unit]
+        priv: [rootless, root]
+        exclude:
+          # bindings, and docker_py, upgrade are only run as root
+          - test: bindings
+            priv: rootless
+          - test: docker_py
+            priv: rootless
+
+        include:
+          # need an extra include for the upgrade tests to set the mode
+          - test: upgrade
+            distro: fedora-current
+            mode: v5.3.1
+            priv: root
+          - test: upgrade
+            distro: fedora-current
+            mode: v5.6.2
+            priv: root
+
+    uses: ./.github/workflows/lima.yml
+    with:
+      runner: cncf-ubuntu-4-16-x86
+      test: ${{ matrix.test }}
+      distro: ${{ matrix.distro }}
+      priv: ${{ matrix.priv }}
+      mode: ${{ matrix.mode }}
+      timeout: 20
+      if: >-
+        github.event_name != 'pull_request' ||
+        needs.path-filter.outputs.all == 'true' ||
+        needs.path-filter.outputs.code == 'true' ||
+        needs.path-filter.outputs.${{ matrix.test }} == 'true'
+
+
+### TODO missing
+# Macos, build and libkrun/apple hv testing, needs the macos pool, Ashley works on it.
+# Windows, uses the native github runners, Tim is working on it.
+# machine linux tests.
+# Farm, needs extra setup I need to look into
+
+  # Merge protection is setup for this job name, do not change it.
+  success:
+    name: "Total Success"
+    if: always()
+    needs:
+      - validate-source
+      - build
+      - build-alt
+      - big-tests
+      - small-tests
+      #- machine-linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all required jobs
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]] || \
+             [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "One or more required jobs failed or were cancelled"
+            exit 1
+          fi
+          echo "All required jobs passed or were skipped"

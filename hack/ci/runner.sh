@@ -1,408 +1,222 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+# This script is only intended to be run inside the lima VM to configure it and start the tests.
+# Do not run locally.
 
 set -eo pipefail
 
-# This script runs in the Cirrus CI environment, invoked from .cirrus.yml .
-# It can also be invoked manually in a `hack/get_ci_cm.sh` environment,
-# documentation of said usage is TBI.
-#
-# The principal deciding factor is the $TEST_FLAVOR envariable: for any
-# given value 'xyz' there must be a function '_run_xyz' to handle that
-# test. Several other envariables are used to differentiate further,
-# most notably:
-#
-#    PODBIN_NAME  : "podman" (i.e. local) or "remote"
-#    TEST_ENVIRON : 'host', or 'container'; desired environment in which to run
-#    CONTAINER    : 1 if *currently* running inside a container, 0 if host
-#
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )
 
-# shellcheck source=hack/ci/lib.sh
-source $(dirname $0)/lib.sh
+source "$SCRIPT_DIR/lib.sh"
 
-showrun echo "starting"
+parse_args "$@"
 
-function _run_unit() {
-    # shellcheck disable=SC2154
-    if [[ "$PODBIN_NAME" != "podman" ]]; then
-        # shellcheck disable=SC2154
-        die "$TEST_FLAVOR: Unsupported PODBIN_NAME='$PODBIN_NAME'"
+
+PRESERVE_ENVS="CI_USE_REGISTRY_CACHE,CI_DESIRED_COMPOSEFS,OCI_RUNTIME,CGROUP_MANAGER,STORAGE_FS,STORAGE_OPTIONS_OVERLAY,STORAGE_OPTIONS_VFS,PODMAN_UPGRADE_FROM"
+# run as root or or not
+SUDO=""
+if [[ "$PRIV" == "root" ]]; then
+    SUDO="sudo --preserve-env=$PRESERVE_ENVS"
+fi
+
+STORAGE_FS=overlay
+
+case "$DISTRO_NAME" in
+    fedora-current)
+        ;;
+    fedora-prior)
+        STORAGE_FS=vfs
+        ;;
+    fedora-rawhide)
+        # On rawhide enable composefs testing
+        CI_DESIRED_COMPOSEFS="composefs"
+        # Enable sequoia testing
+        TEST_BUILD_TAGS="containers_image_sequoia"
+        ;;
+    debian-sid)
+        ;;
+    *)
+        die "Unknown DISTRO_NAME passed $DISTRO_NAME"
+        ;;
+esac
+
+
+
+
+# As of July 2024, CI VMs come built-in with a registry.
+LCR=/var/cache/local-registry/local-cache-registry
+if [[ -x $LCR ]]; then
+    # Images in cache registry are prepopulated at the time
+    # VMs are built. If any PR adds a dependency on new images,
+    # those must be fetched now, at VM start time. This should
+    # be rare, and must be fixed in next automation images build.
+    while read new_image; do
+        $LCR cache $new_image
+    done < <(grep '^[^#]' test/NEW-IMAGES || true)
+fi
+
+
+## Used in tests so we need to export them
+export STORAGE_FS
+export CI_DESIRED_COMPOSEFS
+
+### SETUP HERE
+
+# Custom storage.conf setup to test different drivers
+conf=/etc/containers/storage.conf
+if [[ -e $conf ]]; then
+    die "FATAL! INTERNAL ERROR! Cannot override $conf"
+fi
+sudo tee $conf <<EOF
+[storage]
+driver = "$STORAGE_FS"
+EOF
+
+if [[ -n "$CI_DESIRED_COMPOSEFS" ]]; then
+    # composefs only works as root so we must set it in the rootful config
+    sudo mkdir /etc/containers/storage.rootful.conf.d/
+    conf=/etc/containers/storage.rootful.conf.d/99-composefs.conf
+    sudo tee $conf <<EOF
+
+# BEGIN CI-enabled composefs
+[storage.options]
+pull_options = {enable_partial_images = "true", use_hard_links = "false", ostree_repos="", convert_images = "true"}
+
+[storage.options.overlay]
+use_composefs = "true"
+# END CI-enabled composefs
+EOF
+
+    # KLUDGE ALERT! Magic options needed for testing composefs.
+    # This option was intended for passing one arg to --storage-opt
+    # but we're hijacking it to pass an extra option+arg. And it
+    # actually works.
+    # This is needed for the e2e tests as they do not use the config file.
+    if [[ "$PRIV" == "root" ]]; then
+        export STORAGE_OPTIONS_OVERLAY='overlay.use_composefs=true --pull-option=enable_partial_images=true --pull-option=convert_images=true'
     fi
-    showrun make localunit
-}
+fi
 
-function _run_apiv2() {
-    (
-        showrun make localapiv2-bash
-        source .venv/requests/bin/activate
-        showrun make localapiv2-python
-    ) |& logformatter
-}
 
-function _run_compose_v2() {
-    showrun ./test/compose/test-compose |& logformatter
-}
+# Machine image is not cached by design.
+if [[ "$TEST" != machine  ]]; then
+    # Install test registries.conf
+    sudo install -v -D -m 644 ./test/registries-cached.conf /etc/containers/registries.conf
+fi
 
-function _run_int() {
-    dotest integration
-}
-
-function _run_sys() {
-    dotest system
-}
-
-function _run_upgrade_test() {
-    export SUPPRESS_BOLTDB_WARNING=true
-    showrun bats test/upgrade |& logformatter
-}
-
-function _run_bud() {
-    showrun ./test/buildah-bud/run-buildah-bud-tests |& logformatter
-}
-
-function _run_bindings() {
-    # install ginkgo
-    showrun make .install.ginkgo
-
-    # if logformatter sees this, it can link directly to failing source lines
-    local gitcommit_magic=
-    if [[ -n "$GIT_COMMIT" ]]; then
-        gitcommit_magic="/define.gitCommit=${GIT_COMMIT}"
+# Add Root user namespace for --userns=auto support in tests
+for which in uid gid;do
+    if ! grep -qE '^containers:' /etc/sub$which; then
+        echo 'containers:10000000:1048576' | sudo tee --append /etc/sub$which
     fi
+done
 
-    (echo "$gitcommit_magic" && \
-        showrun make testbindings) |& logformatter
-}
 
-function _run_docker-py() {
-    source .venv/docker-py/bin/activate
-    showrun make run-docker-py-tests
-}
+# Load null_blk to use /dev/nullb0 for testing block
+# devices limits
+sudo modprobe null_blk nr_devices=1 || :
 
-function _run_endpoint() {
-    showrun make test-binaries
-    showrun make endpoint
-}
+# Ensure our CI uses the cache registry
+export CI_USE_REGISTRY_CACHE=1
 
-function _run_farm() {
-    msg "Testing podman farm."
-    showrun bats test/farm |& logformatter
-}
 
-exec_container() {
-    local var_val
-    local cmd
-    # Required to be defined by caller
-    # shellcheck disable=SC2154
-    msg "Re-executing runner inside container: $CTR_FQIN"
-    msg "************************************************************"
+if [[ "$TEST" != build && "$TEST" != unit ]]; then
+    ## Remove packaged podman and install the compiled podman
+    remove_packaged_podman_files
+    make docs binaries EXTRA_BUILDTAGS="$TEST_BUILD_TAGS"
+    sudo make install PREFIX=/usr ETCDIR=/etc
+fi
 
-    req_env_vars CTR_FQIN TEST_ENVIRON CONTAINER SECRET_ENV_RE
+# Setup git user, bud tests need this.
+$SUDO git config --global user.name "Podman CI"
+$SUDO git config --global user.email "no-reply@podman.io"
 
-    # Line-separated arguments which include shell-escaped special characters
-    declare -a envargs
-    while read -r var; do
-        # Pass "-e VAR" on the command line, not "-e VAR=value". Podman can
-        # do a much better job of transmitting the value than we can,
-        # especially when value includes spaces.
-        envargs+=("-e" "$var")
-    done <<<"$(passthrough_envars)"
+### LOG various relevant things
 
-    # VM Images and Container images are built using (nearly) identical operations.
-    set -x
-    env CONTAINERS_REGISTRIES_CONF=/dev/null bin/podman pull -q $CTR_FQIN
-    # shellcheck disable=SC2154
-    exec bin/podman run --rm --privileged --net=host --cgroupns=host \
-        -v `mktemp -d -p /var/tmp`:/var/tmp:Z \
-        --tmpfs /tmp:mode=1777 \
-        -v /dev/fuse:/dev/fuse \
-        -v "$GOPATH:$GOPATH:Z" \
-        --workdir "$GOSRC" \
-        -e "CONTAINER=1" \
-        "${envargs[@]}" \
-        $CTR_FQIN bash -c "$SCRIPT_BASE/setup_environment.sh && $SCRIPT_BASE/runner.sh"
-}
+echo
+echo "#################"
+echo "Setup complete, logging versions"
+echo "#################"
 
-function _run_build() {
+"$SCRIPT_DIR/logcollector.sh" packages
+"$SCRIPT_DIR/logcollector.sh" ip
+
+### TEST functions
+
+function run_build() {
     # Ensure always start from clean-slate with all vendor modules downloaded
-    showrun make clean
-    showrun make vendor
+    make clean
+    # make vendor
     # shellcheck disable=SC2154
-    showrun make -j $(nproc) --output-sync=target podman-release EXTRA_BUILDTAGS="$TEST_BUILD_TAGS" # includes podman, podman-remote, and docs
+    make -j $(nproc) --output-sync=target podman-release EXTRA_BUILDTAGS="$TEST_BUILD_TAGS" # includes podman, podman-remote, and docs
 
     # There's no reason to validate-binaries across multiple linux platforms
     # shellcheck disable=SC2154
-    if [[ "$DISTRO_NV" =~ $FEDORA_NAME ]]; then
-        showrun make -j $(nproc) --output-sync=target validate-binaries
-    fi
-
-    # Last-minute confirmation that we're testing the desired runtime.
-    # This Can't Possibly Fail™ in regular CI; only when updating VMs.
-    # $CI_DESIRED_RUNTIME must be defined in .cirrus.yml.
-    req_env_vars CI_DESIRED_RUNTIME
-    runtime=$(bin/podman info --format '{{.Host.OCIRuntime.Name}}')
-    # shellcheck disable=SC2154
-    if [[ "$runtime" != "$CI_DESIRED_RUNTIME" ]]; then
-        die "Built podman is using '$runtime'; this CI environment requires $CI_DESIRED_RUNTIME"
-    fi
-    msg "Built podman is using expected runtime='$runtime'"
-}
-
-function _run_altbuild() {
-    local -a arches
-    local arch
-    req_env_vars ALT_NAME
-    # Var. defined in .cirrus.yml
-    # shellcheck disable=SC2154
-    msg "Performing alternate build: $ALT_NAME"
-    msg "************************************************************"
-    set -x
-    cd $GOSRC
-    case "$ALT_NAME" in
-        *Windows*)
-	    showrun make .install.pre-commit
-            showrun make lint GOOS=windows CGO_ENABLED=0
-            showrun make podman-remote-release-windows_amd64.zip
-            ;;
-        *RPM*)
-            showrun make package
-            ;;
-        Alt*x86*Cross)
-            _build_altbuild_archs "386"
-            ;;
-        Alt*ARM*Cross)
-            _build_altbuild_archs "arm"
-            ;;
-        Alt*Other*Cross)
-            arches=(\
-                ppc64le
-                s390x)
-            _build_altbuild_archs "${arches[@]}"
-            ;;
-        Alt*MIPS*Cross)
-            arches=(\
-                mips
-                mipsle)
-            _build_altbuild_archs "${arches[@]}"
-            ;;
-        Alt*MIPS64*Cross*)
-            arches=(\
-                mips64
-                mips64le)
-            _build_altbuild_archs "${arches[@]}"
-            ;;
-        Alt*RISCV64*Cross)
-            _build_altbuild_archs "riscv64"
-            ;;
-        *)
-            die "Unknown/Unsupported \$$ALT_NAME '$ALT_NAME'"
-    esac
-}
-
-function _build_altbuild_archs() {
-    for arch in "$@"; do
-        msg "Building release archive for $arch"
-        showrun make cross-binaries GOARCH=$arch
-    done
-}
-
-function _run_release() {
-    msg "podman info:"
-    bin/podman info
-
-    msg "Checking podman release (or potential release) criteria."
-    # We're running under 'set -eo pipefail'; make sure this statement passes
-    dev=$(bin/podman info |& grep -- -dev || echo -n '')
-    if [[ -n "$dev" ]]; then
-        die "Releases must never contain '-dev' in output of 'podman info' ($dev)"
-    fi
-
-    commit=$(bin/podman info --format='{{.Version.GitCommit}}' | tr -d '[:space:]')
-    if [[ -z "$commit" ]]; then
-        die "Releases must contain a non-empty Version.GitCommit in 'podman info'"
-    fi
-    msg "All OK"
-}
-
-
-# ***WARNING*** ***WARNING*** ***WARNING*** ***WARNING***
-#    Please see gitlab comment in setup_environment.sh
-# ***WARNING*** ***WARNING*** ***WARNING*** ***WARNING***
-function _run_gitlab() {
-    rootless_uid=$(id -u)
-    systemctl enable --now --user podman.socket
-    export DOCKER_HOST=unix:///run/user/${rootless_uid}/podman/podman.sock
-    export CONTAINER_HOST=$DOCKER_HOST
-    cd $GOPATH/src/gitlab.com/gitlab-org/gitlab-runner
-    set +e
-    go test -v ./executors/docker |& tee $GOSRC/gitlab-runner-podman.log
-    ret=$?
-    set -e
-    # This file is collected and parsed by Cirrus-CI so must be in $GOSRC
-    cat $GOSRC/gitlab-runner-podman.log | \
-        go-junit-report > $GOSRC/gitlab-runner-podman.xml
-    return $ret
-}
-
-
-# Name pattern for logformatter output file, derived from environment
-function output_name() {
-    # .cirrus.yml defines this as a short readable string for web UI
-    std_name_fmt=$(sed -ne 's/^.*std_name_fmt \"\(.*\)\"/\1/p' <.cirrus.yml)
-    test -n "$std_name_fmt" || die "Could not grep 'std_name_fmt' from .cirrus.yml"
-
-    # Interpolate envariables. 'set -u' throws fatal if any are undefined
-    (
-        set -u
-        eval echo "$std_name_fmt" | tr ' ' '-'
-    )
-}
-
-function logformatter() {
-    if [[ "$CI" == "true" ]]; then
-        # Requires stdin and stderr combined!
-        cat - \
-            |& awk --file "${CIRRUS_WORKING_DIR}/${SCRIPT_BASE}/timestamp.awk" \
-            |& "${CIRRUS_WORKING_DIR}/${SCRIPT_BASE}/logformatter" "$(output_name)"
-    else
-        # Assume script is run by a human, they want output immediately
-        cat -
+    if [[ "$DISTRO_NAME" == fedora-current ]]; then
+        make -j $(nproc) --output-sync=target validate-binaries
     fi
 }
 
-# Handle local|remote integration|system testing in a uniform way
-dotest() {
-    local testsuite="$1"
-    req_env_vars testsuite CONTAINER TEST_ENVIRON PRIV_NAME
-
-    # shellcheck disable=SC2154
-    if ((CONTAINER==0)) && [[ "$TEST_ENVIRON" == "container" ]]; then
-        exec_container  # does not return
-    fi;
-
-    # containers/automation sets this to 0 for its dbg() function
-    # but the e2e integration tests are also sensitive to it.
-    unset DEBUG
-
-    # shellcheck disable=SC2154
-    local localremote="$PODBIN_NAME"
-    case "$PODBIN_NAME" in
-        podman)  localremote="local" ;;
-    esac
-
-    # We've had some oopsies where tests invoke 'podman' instead of
-    # /path/to/built/podman. Let's catch those.
-    sudo rm -f /usr/bin/podman /usr/bin/podman-remote
-    fallback_podman=$(type -p podman || true)
-    if [[ -n "$fallback_podman" ]]; then
-        die "Found fallback podman '$fallback_podman' in \$PATH; tests require none, as a guarantee that we're testing the right binary."
-    fi
-
-    # Catch invalid "TMPDIR == /tmp" assumptions; PR #19281
-    TMPDIR=$(mktemp --tmpdir -d CI_XXXX)
-    # tmp dir is commonly 1777 to allow all user to read/write
-    chmod 1777 $TMPDIR
-    export TMPDIR
-    fstype=$(findmnt -n -o FSTYPE --target $TMPDIR)
-    if [[ "$fstype" != "tmpfs" ]]; then
-        die "The CI test TMPDIR is not on a tmpfs mount, we need tmpfs to make the tests faster"
-    fi
-
-    showrun make ${localremote}${testsuite} PODMAN_SERVER_LOG=$PODMAN_SERVER_LOG EXTRA_BUILDTAGS="$TEST_BUILD_TAGS" \
-        |& logformatter
-
-    # FIXME: https://github.com/containers/podman/issues/22642
-    # Cannot delete this due cleanup errors, as the VM is basically
-    # done after this anyway let's not block on this for now.
-    # rm -rf $TMPDIR
-    # unset TMPDIR
+function run_apiv2() {
+    virtualenv .venv/requests
+    source .venv/requests/bin/activate
+    pip install --upgrade pip
+    pip install --requirement ./test/apiv2/python/requirements.txt
+    $SUDO make localapiv2-bash
+    $SUDO sh -c "source .venv/requests/bin/activate && make localapiv2-python"
 }
 
-_run_machine-linux() {
-    showrun make localmachine |& logformatter
+function run_bindings() {
+    make .install.ginkgo
+    $SUDO make testbindings
 }
 
-# Nearly every task in .cirrus.yml makes use of this shell script
-# wrapped by /usr/bin/time to collect runtime statistics.  Because the
-# --output option is used to log stats to a file, every child-process
-# inherits an open FD3 pointing at the log.  However, some testing
-# operations depend on making use of FD3, and so it must be explicitly
-# closed here (and for all further child-processes).
-# STATS_LOGFILE assumed empty/undefined outside of Cirrus-CI (.cirrus.yml)
-# shellcheck disable=SC2154
-exec 3<&-
+function run_bud() {
+    $SUDO ./test/buildah-bud/run-buildah-bud-tests
+}
 
-msg "************************************************************"
-# Required to be defined by caller
-# shellcheck disable=SC2154
-msg "Runner executing $TEST_FLAVOR $PODBIN_NAME-tests as $PRIV_NAME on $DISTRO_NV($OS_REL_VER)"
-if ((CONTAINER)); then
-    # shellcheck disable=SC2154
-    msg "Current environment container image: $CTR_FQIN"
-else
-    # shellcheck disable=SC2154
-    msg "Current environment VM image: $VM_IMAGE_NAME"
-fi
-msg "************************************************************"
+function run_compose_v2() {
+    # FIXME do not hard code the version here, and likely it would be best to embed this in the VM image to begin with.
+    sudo curl --fail -SL https://github.com/docker/compose/releases/download/v2.32.3/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose
+    sudo chmod +x /usr/local/bin/docker-compose
+    $SUDO ./test/compose/test-compose
+}
 
-((${SETUP_ENVIRONMENT:-0})) || \
-    die "Expecting setup_environment.sh to have completed successfully"
+function run_docker_py() {
+    virtualenv .venv/docker-py
+    source .venv/docker-py/bin/activate
+    pip install --upgrade pip
+    pip install --requirement ./test/python/requirements.txt
+    $SUDO sh -c "source .venv/docker-py/bin/activate && make run-docker-py-tests"
+}
 
-if [[ "$UID" -eq 0 ]] && ((CONTAINER==0)); then
-    # start ebpf cleanup tracer (#23487)
-    msg "start ebpf cleanup tracer"
-    # replace zero bytes to make the log more readable
-    bpftrace $GOSRC/hack/podman_cleanup_tracer.bt |& \
-        tr '\0' ' ' >$GOSRC/podman-cleanup-tracer.log &
-    TRACER_PID=$!
-fi
+function run_unit() {
+    make .install.ginkgo
+    $SUDO make localunit
+}
 
-# shellcheck disable=SC2154
-if [[ "$PRIV_NAME" == "rootless" ]] && [[ "$UID" -eq 0 ]]; then
-    # Remove /var/lib/cni, it is not required for rootless cni.
-    # We have to test that it works without this directory.
-    # https://github.com/containers/podman/issues/10857
-    rm -rf /var/lib/cni
+function run_upgrade() {
+    export SUPPRESS_BOLTDB_WARNING=true
+    export PODMAN_UPGRADE_FROM=${MODE}
+    $SUDO bats test/upgrade
+}
 
-    # This must be done at the last second, otherwise `make` calls
-    # in setup_environment (as root) will balk about ownership.
-    msg "Recursively chowning \$GOPATH and \$GOSRC to $ROOTLESS_USER"
-    if [[ $PRIV_NAME = "rootless" ]]; then
-        chown -R $ROOTLESS_USER:$ROOTLESS_USER "$GOPATH" "$GOSRC"
-    fi
+function run_int() {
+    $SUDO make ${MODE}integration
+}
 
-    req_env_vars ROOTLESS_USER
-    msg "Re-executing runner through ssh as user '$ROOTLESS_USER'"
-    msg "************************************************************"
-    set -x
-    exec ssh $ROOTLESS_USER@localhost \
-            -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
-            -o CheckHostIP=no $GOSRC/$SCRIPT_BASE/runner.sh
-    # Does not return!
-fi
-# else: not running rootless, do nothing special
+function run_sys() {
+    $SUDO make ${MODE}system
+}
 
-# Dump important package versions. Before 2022-11-16 this took place as
-# a separate .cirrus.yml step, but it really belongs here.
-$(dirname $0)/logcollector.sh packages
-msg "************************************************************"
+function run_machine() {
+    $SUDO make ${MODE}machine
+}
 
 
-cd "${GOSRC}/"
+echo
+echo "#################"
+echo "Starting Test"
+echo "#################"
 
-handler="_run_${TEST_FLAVOR}"
-
-if [ "$(type -t $handler)" != "function" ]; then
-    die "Unknown/Unsupported \$TEST_FLAVOR=$TEST_FLAVOR"
-fi
-
-# Unset NOTIFY_SOCKET based on: https://github.com/containers/podman/pull/27514#issuecomment-3529125596
-unset NOTIFY_SOCKET
-
-showrun $handler
-
-if [[ -n "$TRACER_PID" ]]; then
-    # ignore any error here
-    kill "$TRACER_PID" || true
-fi
-
-showrun echo "finished"
+run_$TEST
