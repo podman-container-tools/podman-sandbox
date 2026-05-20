@@ -5,8 +5,6 @@ set -e
 # shellcheck source=hack/ci/lib.sh
 source $(dirname $0)/lib.sh
 
-req_env_vars CIRRUS_WORKING_DIR OS_RELEASE_ID
-
 # Assume there are other log collection commands to follow - Don't
 # let one break another that may be useful, but also keep any
 # actual script-problems fatal so they are noticed right away.
@@ -21,6 +19,11 @@ showrun() {
     echo '------------------------------------------------------------'
     set -e
 }
+
+bad_os_id_ver() {
+    die "Unknown OS '$OS_RELEASE_ID'"
+}
+
 
 case $1 in
     audit)
@@ -74,10 +77,5 @@ case $1 in
         # Any not-present packages will be listed as such
         $PKG_LST_CMD "${PKG_NAMES[@]}" | sort -u
         ;;
-    time)
-        # Assumed to be empty/undefined outside of Cirrus-CI (.cirrus.yml)
-        # shellcheck disable=SC2154
-        if [[ -r "$STATS_LOGFILE" ]]; then cat "$STATS_LOGFILE"; fi
-        ;;
-    *) die "Warning, $(basename $0) doesn't know how to handle the parameter '$1'"
+    ip) showrun sh -c "ip addr && ip route && ip -6 route" ;;
 esac
