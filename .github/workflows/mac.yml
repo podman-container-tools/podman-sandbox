@@ -67,20 +67,17 @@ jobs:
           if-no-files-found: error
 
   machine:
-    name: machine (${{ matrix.provider }})
+    name: machine (applehv)
     needs: build
-    runs-on: [self-hosted, macOS, ARM64, podman-machine]
+    runs-on:
+          group: mac-pool
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        provider: [applehv, libkrun]
     env:
-      PROVIDER: ${{ matrix.provider }}
-      CONTAINERS_MACHINE_PROVIDER: ${{ matrix.provider }}
+      PROVIDER: applehv
+      CONTAINERS_MACHINE_PROVIDER: applehv
       # pkg/machine/e2e/machine_test.go rejects TMPDIR >= 22 chars on darwin
       # (Unix socket path budget). /private/tmp is 12 chars.
-      TMPDIR: /private/tmp
+      TMPDIR: /private/tmp/ci
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -92,8 +89,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Pre-clean machine state
-        run: ./contrib/gha/mac/clean_state.sh
+      # - name: Pre-clean machine state
+      #   run: ./contrib/gha/mac/clean_state.sh
 
       - name: Build podman + ginkgo + mac-helper
         # Mirrors contrib/cirrus/.cirrus.yml osx_alt_build_task basic_build_script.
@@ -113,15 +110,15 @@ jobs:
         if: failure()
         run: ./contrib/gha/mac/collect_diagnostics.sh
 
-      - name: Post-run cleanup
-        if: always()
-        run: ./contrib/gha/mac/clean_state.sh
+      # - name: Post-run cleanup
+      #   if: always()
+      #   run: ./contrib/gha/mac/clean_state.sh
 
       - name: Upload diagnostics
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: machine-${{ matrix.provider }}-diag
+          name: machine-applehv-diag
           path: |
             *.log
           if-no-files-found: warn
