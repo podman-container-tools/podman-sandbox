@@ -12,7 +12,7 @@ set -eo pipefail
 set -a
 source /etc/automation_environment
 source $AUTOMATION_LIB_PATH/common_lib.sh
-# shellcheck source=contrib/cirrus/lib.sh
+# shellcheck source=hack/ci/lib.sh
 source $(dirname $0)/lib.sh
 set +a
 
