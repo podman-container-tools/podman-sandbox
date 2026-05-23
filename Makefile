@@ -763,11 +763,11 @@ test-binaries: test/checkseccomp/checkseccomp test/goecho/goecho test/version/ve
 
 .PHONY: tests-included
 tests-included:
-	contrib/cirrus/pr-should-include-tests
+	hack/ci/pr-should-include-tests
 
 .PHONY: test-jira-links-included
 test-jira-links-included:
-	contrib/cirrus/pr-should-link-jira
+	hack/ci/pr-should-link-jira
 
 .PHONY: tests-expect-exit
 tests-expect-exit:
@@ -781,7 +781,7 @@ tests-expect-exit:
 
 .PHONY: pr-removes-fixed-skips
 pr-removes-fixed-skips:
-	contrib/cirrus/pr-removes-fixed-skips
+	hack/ci/pr-removes-fixed-skips
 
 ###
 ### Release/Packaging targets

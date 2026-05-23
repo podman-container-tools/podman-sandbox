@@ -9,7 +9,7 @@
 
 set -e
 
-# shellcheck source=./contrib/cirrus/lib.sh
+# shellcheck source=./hack/ci/lib.sh
 source $(dirname $0)/lib.sh
 
 showrun echo "starting"
@@ -432,7 +432,7 @@ case "$TEST_FLAVOR" in
     *) die_unknown TEST_FLAVOR
 esac
 
-# See ./contrib/cirrus/CIModes.md.
+# See ./hack/ci/CIModes.md.
 # Vars defined by cirrus-ci
 # shellcheck disable=SC2154
 if [[ ! "$OS_RELEASE_ID" =~ "debian" ]] && \

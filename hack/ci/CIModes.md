@@ -52,7 +52,7 @@ uses the following main rules:
    affect any tasks so the code cannot skip it. It includes
    - `.cirrus.yml` (cirrus changes)
    - `Makefile` (make targets are used to trigger tests)
-   - `contrib/cirrus/**` (cirrus scripts to run the tests)
+   - `hack/ci/**` (cirrus scripts to run the tests)
    - `vendor/**` (dependency updates)
    - `test/tools/**` (test dependency code, i.e. ginkgo)
    - `hack/**` (contains scripts used by several tests)

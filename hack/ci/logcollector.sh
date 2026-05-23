@@ -2,7 +2,7 @@
 
 set -e
 
-# shellcheck source=contrib/cirrus/lib.sh
+# shellcheck source=hack/ci/lib.sh
 source $(dirname $0)/lib.sh
 
 req_env_vars CIRRUS_WORKING_DIR OS_RELEASE_ID
