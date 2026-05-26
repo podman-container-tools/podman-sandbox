@@ -30,7 +30,7 @@ containing 'Skip' instructions or FIXME comments referencing
 those IDs. If we find any, we abort with a loud and hopefully
 useful message.
 
-$ME is intended to run from Cirrus CI.
+$ME is intended to run from CI.
 
 OPTIONS:
 
@@ -71,7 +71,7 @@ sub main {
     die "$ME: This script takes no arguments; try $ME --help\n"  if @ARGV;
 
     # Check commit messages from both github and git; they often differ
-    my @issues = fixed_issues(cirrus_change_message(), git_commit_messages())
+    my @issues = fixed_issues(pr_change_message(), git_commit_messages())
         or exit 0;
 
     my @found = unremoved_skips(@issues)
@@ -161,16 +161,16 @@ sub fixed_issues {
     return @issues;
 }
 
-###########################
-#  cirrus_change_message  #  this is the one from *GitHub*, not *git*
-###########################
-sub cirrus_change_message {
-    my $change_message = $ENV{CIRRUS_CHANGE_MESSAGE}
+#######################
+#  pr_change_message  #  the PR description (from *GitHub*, not *git*)
+#######################
+sub pr_change_message {
+    my $change_message = $ENV{PR_BODY}
         or do {
             # OK for it to be unset if we're not running CI on a PR
-            return if ! $ENV{CIRRUS_PR};
+            return if ! $ENV{PR_NUMBER};
             # But if we _are_ running on a PR, something went badly wrong.
-            die "$ME: \$CIRRUS_CHANGE_MESSAGE is undefined\n";
+            die "$ME: \$PR_BODY is undefined\n";
         };
 
     return $change_message;
@@ -180,10 +180,10 @@ sub cirrus_change_message {
 #  git_commit_messages  #  the ones from the *git history*
 #########################
 sub git_commit_messages {
-    # Probably the same as HEAD, but use Cirrus-defined value if available
-    my $head = $ENV{CIRRUS_CHANGE_IN_REPO} || 'HEAD';
+    # Probably the same as HEAD, but use the CI-defined value if available
+    my $head = $ENV{PR_HEAD} || 'HEAD';
 
-    # Base of this PR. Here we absolutely rely on cirrus.
+    # Base of this PR.
     return if ! $ENV{DEST_BRANCH};
     chomp(my $base = qx{git merge-base $ENV{DEST_BRANCH} $head});
 
