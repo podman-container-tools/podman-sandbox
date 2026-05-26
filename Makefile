@@ -765,10 +765,6 @@ test-binaries: test/checkseccomp/checkseccomp test/goecho/goecho test/version/ve
 tests-included:
 	hack/ci/pr-should-include-tests
 
-.PHONY: test-jira-links-included
-test-jira-links-included:
-	hack/ci/pr-should-link-jira
-
 .PHONY: tests-expect-exit
 tests-expect-exit:
 	@if grep -E --line-number 'Expect.*ExitCode' test/e2e/*.go | grep -E -v ', ".*"\)'; then \

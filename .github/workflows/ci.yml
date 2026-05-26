@@ -1,0 +1,97 @@
+name: "ci"
+
+on:
+  push:
+    branches:
+      - main
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - 'v*'
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-source:
+    name: Validate source code changes
+    runs-on: cncf-ubuntu-8-32-x86
+    env:
+      # Base commit of this PR; used by the Makefile and the helper scripts to
+      # compute the commit range (git merge-base $DEST_BRANCH HEAD..HEAD).
+      DEST_BRANCH: ${{ github.event.pull_request.base.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_HEAD: ${{ github.event.pull_request.head.sha }}
+      PR_BODY: ${{ github.event.pull_request.body }}
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # Check out the actual PR head (not the synthetic merge commit) so
+          # the commit-range checks validate the contributor's commits.
+          ref: refs/pull/${{ github.event.pull_request.number }}/head
+          # Full history (all branches) is required for git merge-base to find
+          # the fork point against the base branch.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gawk \
+            libassuan-dev \
+            libbtrfs-dev \
+            libgpgme-dev \
+            libseccomp-dev \
+            libsystemd-dev \
+            libclone-perl \
+            man-db \
+            podman \
+            python3-pip
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Read golangci-lint version from Makefile
+        id: gv
+        run: |
+          v=$(awk -F':=' '/^GOLANGCI_LINT_VERSION/ {gsub(/ /,"",$2); print $2; exit}' Makefile)
+          echo "version=v${v}" >> $GITHUB_OUTPUT
+
+      - uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
+        with:
+          version: ${{ steps.gv.outputs.version }}
+          install-only: true
+
+      - name: Install pre-commit
+        run: pipx install pre-commit
+
+      - name: Validate source
+        run: make validate-source
+
+      - name: Check that the PR includes tests
+        # The 'No New Tests' label lets maintainers override this check.
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'No New Tests') }}
+        run: make tests-included
+
+      - name: Validate renovate config
+        run: |
+          diffs=$(git diff --name-only "$DEST_BRANCH" "${PR_HEAD:-HEAD}")
+          # The renovate validator image is large, only pull it when needed.
+          if ! grep -E -q '^\.github/renovate\.json5' <<<"$diffs"; then
+            echo "renovate config unchanged, skipping."
+            exit 0
+          fi
+          echo "Checking renovate config."
+          podman run --rm \
+            -v ./.github/renovate.json5:/usr/src/app/renovate.json5:z \
+            ghcr.io/renovatebot/renovate:latest \
+            renovate-config-validator

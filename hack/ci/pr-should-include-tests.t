@@ -7,13 +7,6 @@
 #
 ME=$(basename $0)
 
-# As of 2024-02 our test script queries github, for which we need token
-if [[ -z "$GITHUB_TOKEN" ]]; then
-    echo "$ME: Please set \$GITHUB_TOKEN" >&2
-    exit 1
-fi
-export CIRRUS_REPO_CLONE_TOKEN="$GITHUB_TOKEN"
-
 ###############################################################################
 # BEGIN test cases
 #
@@ -36,16 +29,14 @@ tests="
 0  68c9e02df  db71759b1   8821  multiple commits, includes tests
 0  bb82c37b7  eeb4c129b   8832  single commit, w/tests, merge-base test
 1  1f5927699  864592c74   8685  multiple commits, no tests
-0  7592f8fbb  6bbe54f2b   8766  no tests, but CI:DOCS in commit message
 0  355e38769  bfbd915d6   8884  a vendor bump
 0  ffe2b1e95  e467400eb   8899  only .cirrus.yml
-0  06a6fd9f2  3cc080151   8695  docs-only, without CI:DOCS
+0  06a6fd9f2  3cc080151   8695  docs-only
 0  a47515008  ecedda63a   8816  unit tests only
 0  caa84cd35  e55320efd   8565  hack/podman-socat only
 0  c342583da  12f835d12   8523  version.go + podman.spec.in
 0  8f75ed958  7b3ad6d89   8835  only a README.md change
 0  b6db60e58  f06dd45e0   9420  a test rename
-0  c6a896b0c  4ea5d6971  11833  includes magic string
 "
 
 # The script we're testing
@@ -89,24 +80,6 @@ function run_test_script() {
             echo "ok $testnum $testname - rc=$expected_rc"
         fi
     fi
-
-    # If we expect an error, confirm that we can override it. We only need
-    # to do this once.
-    if [[ $expected_rc == 1 ]]; then
-        if [[ -z "$tested_override" ]]; then
-            testnum=$(( testnum + 1 ))
-
-            CIRRUS_CHANGE_TITLE="[CI:DOCS] hi there" $test_script &>/dev/null
-            if [[ $? -ne 1 ]]; then
-                echo "not ok $testnum $rest (override with CI:DOCS)"
-                rc=1
-            else
-                echo "ok $testnum $rest (override with CI:DOCS)"
-            fi
-
-            tested_override=1
-        fi
-    fi
 }
 
 # END   test-script runner and status checker
@@ -115,17 +88,13 @@ function run_test_script() {
 
 rc=0
 testnum=0
-tested_override=
 
 while read expected_rc parent_sha  commit_sha pr rest; do
     # Skip blank lines
     test -z "$expected_rc" && continue
 
     export DEST_BRANCH=$parent_sha
-    export CIRRUS_CHANGE_IN_REPO=$commit_sha
-    export CIRRUS_CHANGE_TITLE=$(git log -1 --format=%s $commit_sha)
-    export CIRRUS_CHANGE_MESSAGE=
-    export CIRRUS_PR=$pr
+    export PR_HEAD=$commit_sha
 
     run_test_script $expected_rc "PR $pr - $rest"
 done <<<"$tests"
