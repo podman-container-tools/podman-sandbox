@@ -85,9 +85,10 @@ log "Subnet      : $SUBNET_ID"
 
 # --- Launch ------------------------------------------------------------------
 
-log "Launching instance..."
+log "Launching $host_instance_type instance..."
 launch_json=$(aws ec2 run-instances \
     --launch-template "LaunchTemplateId=${LAUNCH_TEMPLATE_ID},Version=${LAUNCH_TEMPLATE_VERSION}" \
+    --instance-type "$host_instance_type" \
     --key-name "$KEYPAIR_NAME" \
     --subnet-id "$SUBNET_ID" \
     --placement "HostId=${HOST_ID},Tenancy=host" \
