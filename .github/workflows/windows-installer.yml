@@ -1,0 +1,91 @@
+name: Windows / Installer
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/windows-installer.yml'
+      - 'winmake.ps1'
+      - 'contrib/win-installer/**'
+      - 'contrib/cirrus/win-*.ps1'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Don't cancel post-merge runs on main; they're our ground-truth signal.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  installer:
+    name: installer (${{ matrix.provider }})
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [hyperv, wsl]
+    env:
+      PROVIDER: ${{ matrix.provider }}
+    steps:
+      - name: Configure git line endings
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          choco install -y pandoc
+
+      - name: Build podman
+        shell: pwsh
+        run: |
+          .\winmake.ps1 podman-remote
+          .\bin\windows\podman.exe --version
+
+      - name: Fetch gvproxy
+        shell: pwsh
+        run: .\winmake.ps1 win-gvproxy
+
+      - name: Build docs
+        shell: pwsh
+        run: .\winmake.ps1 docs
+
+      - name: Build MSI (current version)
+        shell: pwsh
+        run: .\winmake.ps1 installer
+
+      - name: Build MSI (next version 9.9.9)
+        shell: pwsh
+        run: .\winmake.ps1 installer 9.9.9
+
+      - name: Run installer test
+        shell: pwsh
+        run: .\winmake.ps1 installertest $env:PROVIDER
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: installer-${{ matrix.provider }}-diag
+          path: |
+            contrib/win-installer/*.msi
+            contrib/win-installer/*.log
+          if-no-files-found: warn
