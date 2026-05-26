@@ -77,6 +77,12 @@ jobs:
           wsl --version
           wsl --status
 
+      - name: Configure container policy
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:AppData\containers" | Out-Null
+          Copy-Item -Path pkg\machine\ocipull\policy.json -Destination "$env:AppData\containers"
+
       - name: Run machine e2e
         shell: pwsh
         run: .\winmake.ps1 localmachine
