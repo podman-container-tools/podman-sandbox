@@ -827,18 +827,26 @@ json-file | f
         # image mount is hard to test as a rootless user
         # and does not work remotely
         run_podman image mount $IMAGE
-        romount="$output"
+        mountpoint="$output"
+
+        rootfs=$PODMAN_TMPDIR/rootfs
+        cp -a "$mountpoint" "$rootfs"
+        # Make rootfs actually read only
+        mount --bind -o ro "$rootfs" "$rootfs"
+
+        run_podman image unmount $IMAGE
 
         randomname=c_$(safename)
         # :O (overlay) required with rootfs; see #14504
-        run_podman run --name=$randomname --rootfs $romount:O echo "Hello world"
+        run_podman run --name=$randomname --rootfs $rootfs:O echo "Hello world"
         is "$output" "Hello world"
 
         run_podman container inspect $randomname --format "{{.ImageDigest}}"
         is "$output" "" "Empty image digest for --rootfs container"
 
+        umount "$rootfs"
+
         run_podman rm -f -t0 $randomname
-        run_podman image unmount $IMAGE
     fi
 }
 
