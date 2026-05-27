@@ -86,10 +86,11 @@ jobs:
   machine:
     name: machine (${{ matrix.provider }})
     needs: build
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: [self-hosted, macOS, ARM64, MacM1-4]
     timeout-minutes: 60
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         provider: [applehv, libkrun]
     env:
