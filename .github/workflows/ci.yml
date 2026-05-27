@@ -92,3 +92,36 @@ jobs:
             -v ./.github/renovate.json5:/usr/src/app/renovate.json5:z \
             ghcr.io/renovatebot/renovate:latest \
             renovate-config-validator
+
+      # IMPORTANT: keep this as the LAST step. Don't add anything after this.
+      # The 'git rebase' below rewrites HEAD and, on failure, leaves the
+      # checkout mid-rebase, so any step running afterwards would see a
+      # mutated/detached repo state.
+      - name: Build each commit
+        # Confirm that every commit in the PR builds on its own (so that
+        # 'git bisect' stays usable) and that no binary grows beyond the
+        # limit enforced by hack/ci/make-and-check-size.sh.
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          # The 'bloat_approved' label lets a repo admin override the binary
+          # size growth check in hack/ci/make-and-check-size.sh.
+          BLOAT_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'bloat_approved') }}
+        run: |
+          # git rebase rewrites commits, so it needs a committer identity.
+          git config user.name "CI"
+          git config user.email "ci@podman.io"
+          context_dir=$(mktemp -d --tmpdir make-size-check.XXXXXXX)
+          savedhead=$(git rev-parse HEAD)
+          # Make a copy of the script as we'll be rolling git back.
+          cp -a ./hack/ci/make-and-check-size.sh .
+          # Replay only the PR's own commits: the fork point against the base
+          # branch, not the (possibly advanced) base branch tip.
+          pr_base=$(git merge-base "$DEST_BRANCH" HEAD)
+          # Build the PR base first; this run records the baseline binary
+          # sizes that subsequent (per-commit) runs compare against.
+          git checkout --quiet "$pr_base"
+          ./make-and-check-size.sh "$context_dir"
+          # Back to the PR head, then build (and size-check) each commit.
+          git checkout --quiet "$savedhead"
+          git rebase "$pr_base" -x "./make-and-check-size.sh $context_dir"
+          rm -rf "$context_dir" ./make-and-check-size.sh
