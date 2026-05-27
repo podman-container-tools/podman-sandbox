@@ -206,8 +206,6 @@ function _run_build() {
 }
 
 function _run_altbuild() {
-    local -a arches
-    local arch
     req_env_vars ALT_NAME
     # Var. defined in .cirrus.yml
     # shellcheck disable=SC2154
@@ -224,43 +222,9 @@ function _run_altbuild() {
         *RPM*)
             showrun make package
             ;;
-        Alt*x86*Cross)
-            _build_altbuild_archs "386"
-            ;;
-        Alt*ARM*Cross)
-            _build_altbuild_archs "arm"
-            ;;
-        Alt*Other*Cross)
-            arches=(\
-                ppc64le
-                s390x)
-            _build_altbuild_archs "${arches[@]}"
-            ;;
-        Alt*MIPS*Cross)
-            arches=(\
-                mips
-                mipsle)
-            _build_altbuild_archs "${arches[@]}"
-            ;;
-        Alt*MIPS64*Cross*)
-            arches=(\
-                mips64
-                mips64le)
-            _build_altbuild_archs "${arches[@]}"
-            ;;
-        Alt*RISCV64*Cross)
-            _build_altbuild_archs "riscv64"
-            ;;
         *)
             die "Unknown/Unsupported \$$ALT_NAME '$ALT_NAME'"
     esac
-}
-
-function _build_altbuild_archs() {
-    for arch in "$@"; do
-        msg "Building release archive for $arch"
-        showrun make cross-binaries GOARCH=$arch
-    done
 }
 
 function _run_release() {

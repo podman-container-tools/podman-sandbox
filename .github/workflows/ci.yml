@@ -77,6 +77,14 @@ jobs:
       - name: Validate source
         run: make validate-source
 
+      - name: Cross Build (Linux, FreeBSD)
+        run: make cross
+
+      - name: Build and validate the swagger API spec
+        # 'make swagger' builds pkg/api/swagger.yaml via the go-swagger tool,
+        # which validates that the spec generates cleanly.
+        run: make swagger
+
       - name: Check that the PR includes tests
         # The 'No New Tests' label lets maintainers override this check.
         if: ${{ !contains(github.event.pull_request.labels.*.name, 'No New Tests') }}

@@ -220,18 +220,6 @@ alt_build_task:
             # TODO: Replace with task using `winmake` to build
             # binary and archive installation zip file.
             ALT_NAME: 'Windows Cross' # N/B: Referenced by URLencoded strings elsewhere
-      - env:
-            ALT_NAME: 'Alt Arch. x86 Cross'
-      - env:
-            ALT_NAME: 'Alt Arch. ARM Cross'
-      - env:
-            ALT_NAME: 'Alt Arch. MIPS Cross'
-      - env:
-            ALT_NAME: 'Alt Arch. MIPS64 Cross'
-      - env:
-            ALT_NAME: 'Alt Arch. RISCV64 Cross'
-      - env:
-            ALT_NAME: 'Alt Arch. Other Cross'
     # This task cannot make use of the shared repo.tar.zst artifact.
     clone_script: *full_clone
     setup_script: *setup
