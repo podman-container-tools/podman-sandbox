@@ -101,7 +101,7 @@ var _ = Describe("Podman container interface name", func() {
 
 				// There is no nic created by the macvlan/ipvlan driver.
 				defer podmanTest.removeNetwork(netName1)
-				nc1 := podmanTest.Podman([]string{"network", "create", "-d", driverType, "--subnet", "10.10.0.0/24", netName1})
+				nc1 := podmanTest.Podman([]string{"network", "create", "-d", driverType, "--subnet", "10.9.0.0/24", netName1})
 				nc1.WaitWithDefaultTimeout()
 				Expect(nc1).Should(ExitCleanly())
 
@@ -115,7 +115,7 @@ var _ = Describe("Podman container interface name", func() {
 				Expect(exec1.OutputToString()).Should(ContainSubstring("eth0"))
 
 				defer podmanTest.removeNetwork(netName2)
-				nc2 := podmanTest.Podman([]string{"network", "create", "-d", driverType, "--subnet", "10.25.40.0/24", netName2})
+				nc2 := podmanTest.Podman([]string{"network", "create", "-d", driverType, "--subnet", "10.25.41.0/24", netName2})
 				nc2.WaitWithDefaultTimeout()
 				Expect(nc2).Should(ExitCleanly())
 
@@ -158,7 +158,7 @@ var _ = Describe("Podman container interface name", func() {
 			createNetworkDevice(nicName1)
 
 			defer podmanTest.removeNetwork(netName1)
-			nc1 := podmanTest.Podman([]string{"network", "create", "-d", driverType, "-o", parent1, "--subnet", "10.10.0.0/24", netName1})
+			nc1 := podmanTest.Podman([]string{"network", "create", "-d", driverType, "-o", parent1, "--subnet", "10.9.1.0/24", netName1})
 			nc1.WaitWithDefaultTimeout()
 			Expect(nc1).Should(ExitCleanly())
 
@@ -175,7 +175,7 @@ var _ = Describe("Podman container interface name", func() {
 			createNetworkDevice(nicName2)
 
 			defer podmanTest.removeNetwork(netName2)
-			nc2 := podmanTest.Podman([]string{"network", "create", "-d", driverType, "-o", parent2, "--subnet", "10.25.40.0/24", netName2})
+			nc2 := podmanTest.Podman([]string{"network", "create", "-d", driverType, "-o", parent2, "--subnet", "10.25.42.0/24", netName2})
 			nc2.WaitWithDefaultTimeout()
 			Expect(nc2).Should(ExitCleanly())
 
@@ -219,7 +219,7 @@ var _ = Describe("Podman container interface name", func() {
 			createNetworkDevice(nicName1)
 
 			defer podmanTest.removeNetwork(netName1)
-			nc1 := podmanTest.Podman([]string{"network", "create", "-d", driverType, "-o", parent1, "--subnet", "10.10.0.0/24", netName1})
+			nc1 := podmanTest.Podman([]string{"network", "create", "-d", driverType, "-o", parent1, "--subnet", "10.9.2.0/24", netName1})
 			nc1.WaitWithDefaultTimeout()
 			Expect(nc1).Should(ExitCleanly())
 
@@ -236,7 +236,7 @@ var _ = Describe("Podman container interface name", func() {
 			createNetworkDevice(nicName2)
 
 			defer podmanTest.removeNetwork(netName2)
-			nc2 := podmanTest.Podman([]string{"network", "create", "-d", driverType, "-o", parent2, "--subnet", "10.25.40.0/24", netName2})
+			nc2 := podmanTest.Podman([]string{"network", "create", "-d", driverType, "-o", parent2, "--subnet", "10.25.43.0/24", netName2})
 			nc2.WaitWithDefaultTimeout()
 			Expect(nc2).Should(ExitCleanly())
 
