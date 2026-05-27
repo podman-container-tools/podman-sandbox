@@ -30,6 +30,8 @@ jobs:
       sys: ${{ steps.filter.outputs.sys }}
       machine: ${{ steps.filter.outputs.machine }}
       upgrade: ${{ steps.filter.outputs.upgrade }}
+      windows: ${{ steps.filter.outputs.windows }}
+      installer: ${{ steps.filter.outputs.installer }}
 
       code: ${{ steps.filter-code.outputs.code }}
     steps:
@@ -284,9 +286,19 @@ jobs:
         needs.path-filter.outputs.${{ matrix.test }} == 'true'
 
 
+  windows:
+    needs: [path-filter, validate-source]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.path-filter.outputs.all == 'true' ||
+      needs.path-filter.outputs.code == 'true' ||
+      needs.path-filter.outputs.windows == 'true' ||
+      needs.path-filter.outputs.machine == 'true' ||
+      needs.path-filter.outputs.installer == 'true'
+    uses: ./.github/workflows/windows.yml
+
 ### TODO missing
 # Macos, build and libkrun/apple hv testing, needs the macos pool, Ashley works on it.
-# Windows, uses the native github runners, Tim is working on it.
 # machine linux tests.
 # Farm, needs extra setup I need to look into
 
@@ -300,6 +312,7 @@ jobs:
       - build-alt
       - big-tests
       - small-tests
+      - windows
       #- machine-linux
     runs-on: ubuntu-latest
     steps:

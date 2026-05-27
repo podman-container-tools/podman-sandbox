@@ -1,6 +1,7 @@
 all:
 #  - '.github/workflows/ci.yml'
 #  - '.github/workflows/lima.yml'
+#  - '.github/workflows/windows.yml'
 #  - 'hack/**'
 #  - 'Makefile'
 #  - 'vendor/**'
@@ -40,3 +41,11 @@ machine:
 upgrade:
   - 'test/upgrade/**'
   - 'test/system/*.bash'
+
+windows:
+  - 'winmake.ps1'
+  - 'hack/ci/win-*.ps1'
+  - '.github/workflows/windows.yml'
+
+installer:
+  - 'contrib/win-installer/**'
