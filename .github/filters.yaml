@@ -1,12 +1,13 @@
 all:
-  - '.github/workflows/ci.yml'
-  - '.github/workflows/lima.yml'
-  - 'hack/**'
-  - 'Makefile'
-  - 'vendor/**'
-  - 'test/tools/**'
-  - 'test/registries*.conf'
-  - 'version/rawversion/*'
+#  - '.github/workflows/ci.yml'
+#  - '.github/workflows/lima.yml'
+#  - 'hack/**'
+#  - 'Makefile'
+#  - 'vendor/**'
+#  - 'test/tools/**'
+#  - 'test/registries*.conf'
+#  - 'version/rawversion/*'
+  - 'willnotmatch'
 
 apiv2:
   - 'test/apiv2/**'
