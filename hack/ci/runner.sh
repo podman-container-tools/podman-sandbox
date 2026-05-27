@@ -122,64 +122,6 @@ exec_container() {
         $CTR_FQIN bash -c "$SCRIPT_BASE/setup_environment.sh && $SCRIPT_BASE/runner.sh"
 }
 
-function _run_swagger() {
-    local upload_filename
-    local upload_bucket
-    local download_url
-    local envvarsfile
-    req_env_vars GCPJSON GCPNAME GCPPROJECT CTR_FQIN
-
-    # The filename and bucket depend on the automation context
-    #shellcheck disable=SC2154,SC2153
-    if [[ -n "$CIRRUS_PR" ]]; then
-        upload_bucket="libpod-pr-releases"
-        upload_filename="swagger-pr$CIRRUS_PR.yaml"
-    elif [[ -n "$CIRRUS_TAG" ]]; then
-        upload_bucket="libpod-master-releases"
-        upload_filename="swagger-$CIRRUS_TAG.yaml"
-    elif [[ "$CIRRUS_BRANCH" == "main" ]]; then
-        upload_bucket="libpod-master-releases"
-        # readthedocs versioning uses "latest" for "main" (default) branch
-        upload_filename="swagger-latest.yaml"
-    elif [[ -n "$CIRRUS_BRANCH" ]]; then
-        upload_bucket="libpod-master-releases"
-        upload_filename="swagger-$CIRRUS_BRANCH.yaml"
-    else
-        die "Unknown execution context, expected a non-empty value for \$CIRRUS_TAG, \$CIRRUS_BRANCH, or \$CIRRUS_PR"
-    fi
-
-    # Swagger validation takes a significant amount of time
-    msg "Pulling \$CTR_FQIN '$CTR_FQIN' (background process)"
-    showrun bin/podman pull --quiet $CTR_FQIN &
-
-    cd $GOSRC
-    showrun make swagger
-
-    # Cirrus-CI Artifact instruction expects file here
-    cp -v $GOSRC/pkg/api/swagger.yaml ./
-
-    envvarsfile=$(mktemp -p '' .tmp_$(basename $0)_XXXXXXXX)
-    trap "rm -f $envvarsfile" EXIT  # contains secrets
-    # Warning: These values must _not_ be quoted, podman will not remove them.
-    #shellcheck disable=SC2154
-    cat <<eof >>$envvarsfile
-GCPJSON=$GCPJSON
-GCPNAME=$GCPNAME
-GCPPROJECT=$GCPPROJECT
-FROM_FILEPATH=$GOSRC/swagger.yaml
-TO_GCSURI=gs://$upload_bucket/$upload_filename
-eof
-
-    msg "Waiting for backgrounded podman pull to complete..."
-    wait %%
-    showrun bin/podman run -it --rm --security-opt label=disable \
-        --env-file=$envvarsfile \
-        -v $GOSRC:$GOSRC:ro \
-        --workdir $GOSRC \
-        $CTR_FQIN
-    rm -f $envvarsfile
-}
-
 function _run_build() {
     # Ensure always start from clean-slate with all vendor modules downloaded
     showrun make clean
