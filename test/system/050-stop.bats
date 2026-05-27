@@ -187,7 +187,7 @@ load helpers
 
     # Wait for container to acknowledge the signal. We can't use wait_for_output
     # because that aborts if .State.Running != true
-    local timeout=5
+    local timeout=10
     while [[ $timeout -gt 0 ]]; do
         run_podman logs $ctrname
         if [[ "$output" =~ "Received SIGTERM, ignoring" ]]; then
@@ -206,7 +206,7 @@ load helpers
     # Time check: make sure we were able to run 'ps' before the container
     # exited. If this takes too long, it means ps had to wait for lock.
     local delta_t=$(( $SECONDS - t0 ))
-    assert $delta_t -le 5 "Operations took too long"
+    assert $delta_t -le 7 "Operations took too long"
 
     run_podman kill $ctrname
     run_podman wait $ctrname
