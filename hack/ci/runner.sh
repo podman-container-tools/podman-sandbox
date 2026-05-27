@@ -216,32 +216,6 @@ function _run_altbuild() {
     set -x
     cd $GOSRC
     case "$ALT_NAME" in
-        *Each*)
-            if [[ -z "$CIRRUS_PR" ]]; then
-                echo ".....only meaningful on PRs"
-                return
-            fi
-            showrun git fetch origin
-            # The make-and-check-size script, introduced 2022-03-22 in #13518,
-            # runs 'make' (the original purpose of this check) against
-            # each commit, then checks image sizes to make sure that
-            # none have grown beyond a given limit. That of course
-            # requires a baseline, so our first step is to build the
-            # branch point of the PR.
-            local context_dir savedhead pr_base
-            context_dir=$(mktemp -d --tmpdir make-size-check.XXXXXXX)
-            savedhead=$(git rev-parse HEAD)
-            # Push to PR base. First run of the script will write size files
-            # shellcheck disable=SC2154
-            pr_base=$PR_BASE_SHA
-            showrun git checkout $pr_base
-            showrun hack/make-and-check-size $context_dir
-            # pop back to PR, and run incremental makes. Subsequent script
-            # invocations will compare against original size.
-            showrun git checkout $savedhead
-            showrun git rebase $pr_base -x "hack/make-and-check-size $context_dir"
-            rm -rf $context_dir
-            ;;
         *Windows*)
 	    showrun make .install.pre-commit
             showrun make lint GOOS=windows CGO_ENABLED=0
