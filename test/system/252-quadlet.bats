@@ -926,16 +926,20 @@ EOF
 }
 
 @test "quadlet - rootfs" {
-    skip_if_no_selinux
     skip_if_rootless
 
     run_podman image mount $IMAGE
     mountpoint="$output"
 
+    rootfs=$PODMAN_TMPDIR/rootfs
+    cp -a "$mountpoint" "$rootfs"
+
+    run_podman image unmount $IMAGE
+
     local quadlet_file=$PODMAN_TMPDIR/basic_$(safename).container
     cat > $quadlet_file <<EOF
 [Container]
-Rootfs=$mountpoint:O
+Rootfs=$rootfs:O
 Exec=sh -c "echo STARTED CONTAINER; echo "READY=1" | socat -u STDIN unix-sendto:\$NOTIFY_SOCKET; top -b"
 Notify=yes
 EOF
@@ -947,7 +951,6 @@ EOF
 
     # Done. Clean up.
     service_cleanup $QUADLET_SERVICE_NAME failed
-    run_podman image unmount $IMAGE
 }
 
 @test "quadlet - selinux disable" {
