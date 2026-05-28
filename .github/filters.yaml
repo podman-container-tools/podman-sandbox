@@ -43,3 +43,7 @@ machine:
 upgrade:
   - 'test/upgrade/**'
   - 'test/system/*.bash'
+
+windows:
+  - 'winmake.ps1'
+  - 'hack/ci/win-*.ps1'

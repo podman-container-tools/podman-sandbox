@@ -31,6 +31,7 @@ jobs:
       sys: ${{ steps.filter.outputs.sys }}
       machine: ${{ steps.filter.outputs.machine }}
       upgrade: ${{ steps.filter.outputs.upgrade }}
+      windows: ${{ steps.filter.outputs.windows }}
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -202,8 +203,79 @@ jobs:
       distro: ${{ matrix.distro }}
       timeout: 20
 
+  windows-installer:
+    name: windows installer ${{ matrix.provider }}
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 20
+    permissions: {}
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [hyperv, wsl]
+    env:
+      PROVIDER: ${{ matrix.provider }}
+    steps:
+      - name: Configure git line endings
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          choco install -y pandoc
+
+      - name: Build podman
+        shell: pwsh
+        run: |
+          .\winmake.ps1 podman-remote
+          .\bin\windows\podman.exe --version
+
+      - name: Fetch gvproxy
+        shell: pwsh
+        run: .\winmake.ps1 win-gvproxy
+
+      - name: Build docs
+        shell: pwsh
+        run: .\winmake.ps1 docs
+
+      - name: Build MSI (current version)
+        shell: pwsh
+        run: .\winmake.ps1 installer
+
+      - name: Build MSI (next version 9.9.9)
+        shell: pwsh
+        run: .\winmake.ps1 installer 9.9.9
+
+      - name: Run installer test
+        shell: pwsh
+        run: .\winmake.ps1 installertest $env:PROVIDER
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: windows-installer-${{ matrix.provider }}-diag
+          path: |
+            contrib/win-installer/*.msi
+            contrib/win-installer/*.log
+          if-no-files-found: warn
+
   big-tests:
-    needs: [path-filter, build, build-alt, validate-source]
+    needs: [path-filter, build, build-alt, validate-source, windows-installer]
     name: ${{ matrix.test }} ${{ matrix.mode }} ${{ matrix.priv }} ${{ matrix.distro }}
     strategy:
       fail-fast: false
@@ -244,7 +316,7 @@ jobs:
         needs.path-filter.outputs[format('{0}', matrix.test)] == 'true' }}
 
   small-tests:
-    needs: [path-filter, build, build-alt, validate-source]
+    needs: [path-filter, build, build-alt, validate-source, windows-installer]
     name: ${{ matrix.test }} ${{ matrix.mode }} ${{ matrix.priv }} ${{ matrix.distro }}
     strategy:
       fail-fast: false
@@ -285,7 +357,7 @@ jobs:
         needs.path-filter.outputs[format('{0}', matrix.test)] == 'true' }}
 
   machine-linux:
-    needs: [path-filter, build, build-alt, validate-source]
+    needs: [path-filter, build, build-alt, validate-source, windows-installer]
     # Note we do not check for "code" here because we do not want to trigger machine tests for all code changes.
     if: |
       github.event_name != 'pull_request' ||
@@ -341,9 +413,156 @@ jobs:
         run: |
           make localmachine
 
+  windows-unit:
+    needs: [path-filter, build, build-alt, validate-source, windows-installer]
+    if: |
+      github.event_name != 'pull_request' ||
+      needs.path-filter.outputs.all == 'true' ||
+      needs.path-filter.outputs.code == 'true' ||
+      needs.path-filter.outputs.unit == 'true' ||
+      needs.path-filter.outputs.windows == 'true'
+    name: windows unit
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 20
+    permissions: {}
+    steps:
+      - name: Configure git line endings
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run unit tests
+        shell: pwsh
+        run: .\winmake.ps1 localunit
+
+  windows-e2e:
+    needs: [path-filter, build, build-alt, validate-source, windows-installer]
+    if: |
+      github.event_name != 'pull_request' ||
+      needs.path-filter.outputs.all == 'true' ||
+      needs.path-filter.outputs.code == 'true' ||
+      needs.path-filter.outputs.int == 'true' ||
+      needs.path-filter.outputs.windows == 'true'
+    name: windows e2e
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 20
+    steps:
+      - name: Configure git line endings
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build podman
+        shell: pwsh
+        run: |
+          .\winmake.ps1 podman-remote
+          .\bin\windows\podman.exe --version
+
+      - name: Run non-machine e2e tests
+        shell: pwsh
+        run: .\winmake.ps1 ginkgo-run
+
+  windows-machine:
+    needs: [path-filter, build, build-alt, validate-source, windows-installer]
+    # Note we do not check for "code" here because we do not want to trigger machine tests for all code changes.
+    if: |
+      github.event_name != 'pull_request' ||
+      needs.path-filter.outputs.all == 'true' ||
+      needs.path-filter.outputs.machine == 'true' ||
+      needs.path-filter.outputs.windows == 'true'
+    name: windows machine ${{ matrix.provider }}
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 60
+    continue-on-error: true
+    permissions: {}
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [hyperv, wsl]
+    env:
+      CONTAINERS_MACHINE_PROVIDER: ${{ matrix.provider }}
+    steps:
+      - name: Configure git line endings
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Diagnostics
+        shell: pwsh
+        run: |
+          Get-ComputerInfo | Select-Object OsName, OsVersion, CsProcessors, CsNumberOfLogicalProcessors, CsTotalPhysicalMemory | Format-List
+          Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V | Format-List
+          Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-Hypervisor | Format-List
+          Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform | Format-List
+          Get-CimInstance Win32_Processor | Select-Object Name, VirtualizationFirmwareEnabled, VMMonitorModeExtensions | Format-List
+          Get-Disk | Format-Table -AutoSize
+
+      - name: Build podman
+        shell: pwsh
+        run: |
+          .\winmake.ps1 podman-remote
+          .\bin\windows\podman.exe --version
+
+      - name: Fetch gvproxy
+        shell: pwsh
+        run: .\winmake.ps1 win-gvproxy
+
+      - name: WSL info
+        if: matrix.provider == 'wsl'
+        shell: pwsh
+        run: |
+          wsl --update
+          wsl --version
+          wsl --status
+
+      - name: Configure container policy
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:AppData\containers" | Out-Null
+          Copy-Item -Path pkg\machine\ocipull\policy.json -Destination "$env:AppData\containers"
+
+      - name: Run machine e2e
+        shell: pwsh
+        run: .\winmake.ps1 localmachine
+
 ### TODO missing
 # Macos, build and libkrun/apple hv testing, needs the macos pool, Ashley works on it.
-# Windows, uses the native github runners, Tim is working on it.
 # Farm, needs extra setup I need to look into
 
   # Merge protection is setup for this job name, do not change it.
@@ -357,6 +576,10 @@ jobs:
       - big-tests
       - small-tests
       - machine-linux
+      - windows-installer
+      - windows-unit
+      - windows-e2e
+      - windows-machine
     runs-on: ubuntu-latest
     steps:
       - name: Check all required jobs
