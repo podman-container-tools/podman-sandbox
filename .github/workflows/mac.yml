@@ -86,7 +86,8 @@ jobs:
   machine:
     name: machine (${{ matrix.provider }})
     needs: build
-    runs-on: [self-hosted, macOS, ARM64, MacM1-4]
+    runs-on:
+      group: mac-pool
     timeout-minutes: 60
     strategy:
       fail-fast: false
