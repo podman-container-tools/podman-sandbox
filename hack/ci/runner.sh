@@ -16,7 +16,7 @@ set -eo pipefail
 #    CONTAINER    : 1 if *currently* running inside a container, 0 if host
 #
 
-# shellcheck source=contrib/cirrus/lib.sh
+# shellcheck source=hack/ci/lib.sh
 source $(dirname $0)/lib.sh
 
 showrun echo "starting"

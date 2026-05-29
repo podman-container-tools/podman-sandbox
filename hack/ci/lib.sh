@@ -77,7 +77,7 @@ PATH="$HOME/bin:/usr/local/bin:$PATH"
 LD_LIBRARY_PATH="/usr/local/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 
 # Saves typing / in case location ever moves
-SCRIPT_BASE=${SCRIPT_BASE:-./contrib/cirrus}
+SCRIPT_BASE=${SCRIPT_BASE:-./hack/ci}
 
 # Downloaded, but not installed packages.
 PACKAGE_DOWNLOAD_DIR=/var/cache/download
