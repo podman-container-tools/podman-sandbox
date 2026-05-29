@@ -2,7 +2,7 @@
 
 set -eo pipefail
 
-# shellcheck source=contrib/cirrus/lib.sh
+# shellcheck source=hack/ci/lib.sh
 source $(dirname $0)/lib.sh
 
 # Skip this entire script when run under nightly treadmill cron job.

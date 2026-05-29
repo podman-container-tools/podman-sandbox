@@ -1,11 +1,13 @@
 #!/bin/bash
 #
-# make-and-check-size - wrapper around 'make' that also checks binary growth
+# make-and-check-size.sh - wrapper around 'make' that also checks binary growth
+#
+# Introduced 2022-03-22 in #13518.
 #
 # This script is intended to be run via 'git rebase -x', in a form such as:
 #
 #     context_dir=$(mktemp -d --tmpdir make-size-check.XXXXXXX)
-#     git rebase ${GIT_BASE_BRANCH}^ -x "hack/make-and-check-size $context_dir"
+#     git rebase ${GIT_BASE_BRANCH}^ -x "hack/ci/make-and-check-size.sh $context_dir"
 #     rm -rf $context_dir
 #
 # (Carefully note the '^' next to GIT_BASE_BRANCH!)
@@ -22,10 +24,10 @@
 #
 # *IMPORTANT NOTE*: this script will leave the git checkout in a funky state!
 # (because we rebase onto a nonterminal commit). I believe this is OK, since
-# this script is only invoked in CI from runner.sh and only in a scratch VM.
-# Running this in a development environment would yield unpredictable results
-# anyway, by rebasing onto origin/main by default and by leaving an aborted
-# rebase on failure.
+# this script is only invoked in CI (from the validate-source workflow) on a
+# throwaway checkout. Running this in a development environment would yield
+# unpredictable results anyway, by rebasing onto origin/main by default and by
+# leaving an aborted rebase on failure.
 #
 ME=$(basename $0)
 
@@ -42,7 +44,7 @@ OVERRIDE_LABEL=bloat_approved
 ###############################################################################
 
 #
-# Helper function: queries github for labels on this PR
+# Helper function: checks whether the size growth has been approved.
 #
 function bloat_approved() {
     # Argument is the actual size increase in this build.
@@ -51,34 +53,9 @@ function bloat_approved() {
     #        requiring a MAX_BIN_GROWTH=nnn statement in github comments.
     local actual_growth="$1"
 
-    if [[ -z "$CIRRUS_PR" ]]; then
-        echo "$ME: cannot query github: \$CIRRUS_PR is undefined" >&2
-        return 1
-    fi
-    if [[ -z "$CIRRUS_REPO_CLONE_TOKEN" ]]; then
-        echo "$ME: cannot query github: \$CIRRUS_REPO_CLONE_TOKEN is undefined" >&2
-        return 1
-    fi
-
-    query="{
-  \"query\": \"query {
-  repository(owner: \\\"containers\\\", name: \\\"podman\\\") {
-    pullRequest(number: $CIRRUS_PR) {
-      labels(first: 100) {
-        nodes {
-          name
-        }
-      }
-    }
-  }
-}\"
-}"
-
-    result=$(curl -s -H "Authorization: bearer $CIRRUS_REPO_CLONE_TOKEN" -H "Accept: application/vnd.github.antiope-preview+json" -H "Content-Type: application/json" -X POST --data @- https://api.github.com/graphql <<<"$query")
-
-    labels=$(jq -r '.data.repository.pullRequest.labels.nodes[].name' <<<"$result")
-
-    grep -q -w "$OVERRIDE_LABEL" <<<"$labels"
+    # The validate-source GitHub Actions workflow sets BLOAT_APPROVED=true when
+    # the PR carries the '$OVERRIDE_LABEL' label.
+    [[ "$BLOAT_APPROVED" == "true" ]]
 }
 
 # ACTUAL CODE BEGINS HERE

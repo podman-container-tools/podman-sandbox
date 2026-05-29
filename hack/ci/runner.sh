@@ -16,40 +16,10 @@ set -eo pipefail
 #    CONTAINER    : 1 if *currently* running inside a container, 0 if host
 #
 
-# shellcheck source=contrib/cirrus/lib.sh
+# shellcheck source=hack/ci/lib.sh
 source $(dirname $0)/lib.sh
 
 showrun echo "starting"
-
-function _run_validate-source() {
-    # This target is only meant to be run on PRs.
-    # We need the following env vars set for the git diff check below.
-    req_env_vars CIRRUS_CHANGE_IN_REPO PR_BASE_SHA
-
-    showrun make validate-source
-
-    # make sure PRs have tests
-    showrun make tests-included
-
-    # make sure PRs have jira links (if needed for branch)
-    showrun make test-jira-links-included
-
-    # shellcheck disable=SC2154
-    head=$CIRRUS_CHANGE_IN_REPO
-    # shellcheck disable=SC2154
-    base=$PR_BASE_SHA
-    echo "_run_validate-source: head=$head  base=$base"
-    diffs=$(git diff --name-only $base $head)
-
-    # If PR touches renovate config validate it, as the image is very big only do so when needed
-    if grep -E -q "^.github/renovate.json5" <<<"$diffs"; then
-        msg "Checking renovate config."
-        showrun podman run \
-            -v ./.github/renovate.json5:/usr/src/app/renovate.json5:z \
-            ghcr.io/renovatebot/renovate:latest \
-            renovate-config-validator
-    fi
-}
 
 function _run_unit() {
     # shellcheck disable=SC2154
@@ -152,64 +122,6 @@ exec_container() {
         $CTR_FQIN bash -c "$SCRIPT_BASE/setup_environment.sh && $SCRIPT_BASE/runner.sh"
 }
 
-function _run_swagger() {
-    local upload_filename
-    local upload_bucket
-    local download_url
-    local envvarsfile
-    req_env_vars GCPJSON GCPNAME GCPPROJECT CTR_FQIN
-
-    # The filename and bucket depend on the automation context
-    #shellcheck disable=SC2154,SC2153
-    if [[ -n "$CIRRUS_PR" ]]; then
-        upload_bucket="libpod-pr-releases"
-        upload_filename="swagger-pr$CIRRUS_PR.yaml"
-    elif [[ -n "$CIRRUS_TAG" ]]; then
-        upload_bucket="libpod-master-releases"
-        upload_filename="swagger-$CIRRUS_TAG.yaml"
-    elif [[ "$CIRRUS_BRANCH" == "main" ]]; then
-        upload_bucket="libpod-master-releases"
-        # readthedocs versioning uses "latest" for "main" (default) branch
-        upload_filename="swagger-latest.yaml"
-    elif [[ -n "$CIRRUS_BRANCH" ]]; then
-        upload_bucket="libpod-master-releases"
-        upload_filename="swagger-$CIRRUS_BRANCH.yaml"
-    else
-        die "Unknown execution context, expected a non-empty value for \$CIRRUS_TAG, \$CIRRUS_BRANCH, or \$CIRRUS_PR"
-    fi
-
-    # Swagger validation takes a significant amount of time
-    msg "Pulling \$CTR_FQIN '$CTR_FQIN' (background process)"
-    showrun bin/podman pull --quiet $CTR_FQIN &
-
-    cd $GOSRC
-    showrun make swagger
-
-    # Cirrus-CI Artifact instruction expects file here
-    cp -v $GOSRC/pkg/api/swagger.yaml ./
-
-    envvarsfile=$(mktemp -p '' .tmp_$(basename $0)_XXXXXXXX)
-    trap "rm -f $envvarsfile" EXIT  # contains secrets
-    # Warning: These values must _not_ be quoted, podman will not remove them.
-    #shellcheck disable=SC2154
-    cat <<eof >>$envvarsfile
-GCPJSON=$GCPJSON
-GCPNAME=$GCPNAME
-GCPPROJECT=$GCPPROJECT
-FROM_FILEPATH=$GOSRC/swagger.yaml
-TO_GCSURI=gs://$upload_bucket/$upload_filename
-eof
-
-    msg "Waiting for backgrounded podman pull to complete..."
-    wait %%
-    showrun bin/podman run -it --rm --security-opt label=disable \
-        --env-file=$envvarsfile \
-        -v $GOSRC:$GOSRC:ro \
-        --workdir $GOSRC \
-        $CTR_FQIN
-    rm -f $envvarsfile
-}
-
 function _run_build() {
     # Ensure always start from clean-slate with all vendor modules downloaded
     showrun make clean
@@ -236,8 +148,6 @@ function _run_build() {
 }
 
 function _run_altbuild() {
-    local -a arches
-    local arch
     req_env_vars ALT_NAME
     # Var. defined in .cirrus.yml
     # shellcheck disable=SC2154
@@ -246,32 +156,6 @@ function _run_altbuild() {
     set -x
     cd $GOSRC
     case "$ALT_NAME" in
-        *Each*)
-            if [[ -z "$CIRRUS_PR" ]]; then
-                echo ".....only meaningful on PRs"
-                return
-            fi
-            showrun git fetch origin
-            # The make-and-check-size script, introduced 2022-03-22 in #13518,
-            # runs 'make' (the original purpose of this check) against
-            # each commit, then checks image sizes to make sure that
-            # none have grown beyond a given limit. That of course
-            # requires a baseline, so our first step is to build the
-            # branch point of the PR.
-            local context_dir savedhead pr_base
-            context_dir=$(mktemp -d --tmpdir make-size-check.XXXXXXX)
-            savedhead=$(git rev-parse HEAD)
-            # Push to PR base. First run of the script will write size files
-            # shellcheck disable=SC2154
-            pr_base=$PR_BASE_SHA
-            showrun git checkout $pr_base
-            showrun hack/make-and-check-size $context_dir
-            # pop back to PR, and run incremental makes. Subsequent script
-            # invocations will compare against original size.
-            showrun git checkout $savedhead
-            showrun git rebase $pr_base -x "hack/make-and-check-size $context_dir"
-            rm -rf $context_dir
-            ;;
         *Windows*)
 	    showrun make .install.pre-commit
             showrun make lint GOOS=windows CGO_ENABLED=0
@@ -280,43 +164,9 @@ function _run_altbuild() {
         *RPM*)
             showrun make package
             ;;
-        Alt*x86*Cross)
-            _build_altbuild_archs "386"
-            ;;
-        Alt*ARM*Cross)
-            _build_altbuild_archs "arm"
-            ;;
-        Alt*Other*Cross)
-            arches=(\
-                ppc64le
-                s390x)
-            _build_altbuild_archs "${arches[@]}"
-            ;;
-        Alt*MIPS*Cross)
-            arches=(\
-                mips
-                mipsle)
-            _build_altbuild_archs "${arches[@]}"
-            ;;
-        Alt*MIPS64*Cross*)
-            arches=(\
-                mips64
-                mips64le)
-            _build_altbuild_archs "${arches[@]}"
-            ;;
-        Alt*RISCV64*Cross)
-            _build_altbuild_archs "riscv64"
-            ;;
         *)
             die "Unknown/Unsupported \$$ALT_NAME '$ALT_NAME'"
     esac
-}
-
-function _build_altbuild_archs() {
-    for arch in "$@"; do
-        msg "Building release archive for $arch"
-        showrun make cross-binaries GOARCH=$arch
-    done
 }
 
 function _run_release() {
