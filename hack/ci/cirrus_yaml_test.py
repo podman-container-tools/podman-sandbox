@@ -75,7 +75,7 @@ class TestDependsOn(TestCaseBase):
         """2024-07 PR#23174: ugly but necessary duplication in only_if conditions. Prevent typos or unwanted changes."""
         # N/B: This giant string is white space sensitive, take care when updating/modifying
         beginning = ("$CIRRUS_PR == '' || $CIRRUS_CHANGE_TITLE =~ '.*CI:ALL.*' || changesInclude('.cirrus.yml',"
-                     " 'Makefile', 'contrib/cirrus/**', 'vendor/**', 'test/tools/**', 'test/registries*.conf',"
+                     " 'Makefile', 'hack/ci/**', 'vendor/**', 'test/tools/**', 'test/registries*.conf',"
                      " 'hack/**', 'version/rawversion/*') || ")
         real_source_changes = " || (changesInclude('**/*.go', '**/*.c', '**/*.h') && !changesIncludeOnly('test/**', 'pkg/machine/e2e/**'))"
 

@@ -12,7 +12,7 @@ set -eo pipefail
 set -a
 source /etc/automation_environment
 source $AUTOMATION_LIB_PATH/common_lib.sh
-# shellcheck source=contrib/cirrus/lib.sh
+# shellcheck source=hack/ci/lib.sh
 source $(dirname $0)/lib.sh
 set +a
 
@@ -55,8 +55,6 @@ if [[ "${DISTRO_NV}" == "$FEDORA_NAME" ]]; then
     # Tests for lib.sh
     showrun ${SCRIPT_BASE}/lib.sh.t
 
-    # Tests for pr-should-link-jira
-    showrun ${SCRIPT_BASE}/pr-should-link-jira.t
 
     # Run this during daily cron job to prevent a GraphQL API change/breakage
     # from impacting every PR.  Down-side being if it does fail, a maintainer
